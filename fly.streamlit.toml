@@ -1,0 +1,32 @@
+# fly.toml app configuration file generated for product-review-streamlit on 2025-12-09T15:24:16-03:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'product-review-streamlit'
+primary_region = 'dfw'
+
+[build]
+  dockerfile = 'Dockerfile.streamlit'
+
+[env]
+  API_BASE_URL = 'https://product-review-prototype.fly.dev'
+  PORT = '8501'
+
+[http_service]
+  internal_port = 8501
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/'
+
+[[vm]]
+  size = 'shared-cpu-1x'

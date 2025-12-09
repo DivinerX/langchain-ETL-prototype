@@ -314,11 +314,28 @@ This project includes configuration files for deploying to Fly.io's free tier.
 
 ### Post-Deployment
 
-- **Run the Data Pipeline**: After deployment, you may need to run the data ingestion and enrichment pipeline. You can do this by SSH'ing into the machine:
+- **Run the Data Pipeline**: After deployment, you **MUST** run the data ingestion and enrichment pipeline to populate the database. The database file is created automatically, but it starts empty. Run:
   ```bash
-  fly ssh console
-  python src/run_pipeline.py
+  fly ssh console -C "python src/run_pipeline.py"
   ```
+  
+  **Important**: The pipeline will:
+  - Load and clean the data from `data/structured.csv` and `data/unstructured.json`
+  - Enrich it with LLM (sentiment, topics, summaries)
+  - Store it in the SQLite database at `/app/enriched_data.db`
+  
+  **Note**: Make sure your `DB_PATH` environment variable matches where you want the database (default is `/app/enriched_data.db`).
+  
+  **Debug**: If you see 0 records, check the debug endpoint:
+  ```bash
+  curl https://your-app.fly.dev/debug/database
+  ```
+  This will show you:
+  - Database file location and size
+  - Table structure
+  - Record count
+  - Sample records (if any)
+  - Instructions if the database is empty
 
 - **View Logs**: Monitor your application logs:
   ```bash
@@ -336,7 +353,82 @@ This project includes configuration files for deploying to Fly.io's free tier.
   ```bash
   fly volumes create data --size 1
   ```
-  Then update the database path in your code to use the volume mount.
+  
+  Then mount the volume and set the database path environment variable:
+  ```bash
+  # Mount the volume (add this to fly.toml under [mounts])
+  # Or use: fly volumes attach data
+  ```
+  
+  Set the database path environment variable:
+  ```bash
+  fly secrets set DB_PATH=/enriched_data.db
+  ```
+  
+  **Note**: If you're using a volume, make sure the volume is mounted. You can check the volume mount in your `fly.toml` file or by running `fly volumes list`.
+  
+  **Troubleshooting**: If you're getting empty results from the API:
+  
+  1. **Check if there's a DB_PATH secret that might be overriding fly.toml:**
+     ```bash
+     fly secrets list
+     ```
+     **Important**: If you see `DB_PATH` in the secrets list with a Windows path (like `C:/...`), remove it:
+     ```bash
+     fly secrets unset DB_PATH
+     ```
+     Secrets take precedence over environment variables in `fly.toml`, so a bad secret will override your correct setting.
+  
+  2. **Find where your database file actually is:**
+     ```bash
+     fly ssh console -C "find / -name 'enriched_data.db' 2>/dev/null"
+     ```
+  
+  3. **Check the current working directory and look for the database:**
+     ```bash
+     fly ssh console -C "pwd && ls -la *.db"
+     ```
+     (On Fly.io, this should be `/app` based on the Dockerfile)
+  
+  4. **Set the DB_PATH correctly:**
+     
+     **Option A: Use fly.toml (recommended for fixed paths)**
+     - Edit `fly.toml` and set `DB_PATH = '/app/enriched_data.db'` in the `[env]` section
+     - This is already done if you followed the setup
+     
+     **Option B: Use secrets (if you need different paths per environment)**
+     ```bash
+     # If database is in /app (default):
+     fly secrets set DB_PATH=/app/enriched_data.db
+     
+     # If database is in root:
+     fly secrets set DB_PATH=/enriched_data.db
+     
+     # If using a volume mounted at /data:
+     fly secrets set DB_PATH=/data/enriched_data.db
+     ```
+     **Note**: Secrets override fly.toml env vars, so if you set a secret, it will be used instead.
+  
+  5. **Check the health endpoint** (shows database path, environment info, and record count):
+     ```bash
+     curl https://your-app.fly.dev/health
+     ```
+     This will show:
+     - The exact path being used
+     - The DB_PATH environment variable value
+     - Whether the file exists
+     - The record count
+  
+  6. **Verify the database has data:**
+     ```bash
+     # Replace /app/enriched_data.db with the actual path from step 2
+     fly ssh console -C "sqlite3 /app/enriched_data.db 'SELECT COUNT(*) FROM enriched_records;'"
+     ```
+  
+  7. **Redeploy after making changes:**
+     ```bash
+     fly deploy
+     ```
 
 - **Free Tier Limits**: 
   - 256MB RAM
@@ -347,3 +439,41 @@ This project includes configuration files for deploying to Fly.io's free tier.
 - **Health Checks**: The application includes a `/health` endpoint that Fly.io monitors automatically.
 
 - **API Documentation**: Once deployed, access interactive API docs at `https://your-app.fly.dev/docs`
+
+### Deploying Streamlit Frontend (Optional)
+
+The current deployment only includes the FastAPI backend. To also deploy the Streamlit frontend:
+
+**Option 1: Deploy Streamlit as a Separate App** (Recommended for free tier)
+
+1. **Deploy the FastAPI backend first** (using the steps above)
+
+2. **Deploy Streamlit as a separate app:**
+   ```bash
+   fly launch --config fly.streamlit.toml --dockerfile Dockerfile.streamlit
+   ```
+   
+   When prompted:
+   - **App name**: Use a different name like `product-review-streamlit`
+   - **Region**: Use the same region as your FastAPI app
+   - **Postgres/Redis**: Type `n` for both
+   - **Deploy now?**: Type `n`
+
+3. **Set the API URL** (replace with your FastAPI app URL):
+   ```bash
+   fly secrets set API_BASE_URL=https://product-review-prototype.fly.dev
+   ```
+
+4. **Deploy Streamlit:**
+   ```bash
+   fly deploy --config fly.streamlit.toml --dockerfile Dockerfile.streamlit
+   ```
+
+**Option 2: Access API Only**
+
+You can use the FastAPI endpoints directly:
+- API: `https://your-app.fly.dev`
+- Interactive docs: `https://your-app.fly.dev/docs`
+- Health check: `https://your-app.fly.dev/health`
+
+The Streamlit app is designed to work with the API, so you can run it locally and point it to your deployed API, or deploy it separately as shown above.

@@ -412,7 +412,13 @@ def run_pipeline():
     
     # Step 6: Store in SQLite
     logger.info("\n[6/7] Storing data in SQLite database...")
-    db = Database()
+    db_path = os.getenv("DB_PATH")
+    if db_path:
+        logger.info(f"Using database path from environment: {db_path}")
+        db = Database(db_path=db_path)
+    else:
+        logger.info("Using default database path: enriched_data.db")
+        db = Database()
     db.insert_dataframe(final_data)
     db.close()
     

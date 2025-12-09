@@ -6,8 +6,9 @@ import pandas as pd
 import requests
 from typing import List, Dict, Optional
 
-# API base URL
-API_BASE_URL = "http://localhost:8000"
+# API base URL - can be set via environment variable for production
+import os
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 
 def fetch_all_records() -> List[Dict]:

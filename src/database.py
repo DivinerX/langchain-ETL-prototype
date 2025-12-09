@@ -4,6 +4,7 @@ Database module for SQLite operations to store enriched data.
 import sqlite3
 import pandas as pd
 import logging
+import os
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -13,19 +14,67 @@ logger = logging.getLogger(__name__)
 class Database:
     """Class for managing SQLite database operations."""
     
-    def __init__(self, db_path: str = "enriched_data.db"):
+    def __init__(self, db_path: Optional[str] = None):
         """
         Initialize database connection.
         
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file. If None, uses DB_PATH env var or defaults to "enriched_data.db"
         """
-        self.db_path = db_path
+        # Get database path from parameter, environment variable, or default
+        if db_path is None:
+            db_path = os.getenv("DB_PATH")
+            if not db_path:
+                # Default to a path in the current working directory
+                # On Fly.io/Docker, working directory is /app (from Dockerfile WORKDIR)
+                # For local development, this will be the project root
+                cwd = os.getcwd()
+                # Use absolute path to avoid path resolution issues
+                db_path = os.path.join(cwd, "enriched_data.db")
+        
+        # Clean up the path - handle Windows paths that might have leaked in
+        # Remove any Windows-style absolute paths (C:, D:, etc.) when running on Linux
+        # Check for Windows drive letters (C:, D:, etc.) anywhere in the path
+        if db_path and os.path.sep == '/':  # Running on Linux/Unix
+            # Check if path contains Windows drive letter pattern (X:)
+            import re
+            if re.search(r'[A-Za-z]:[/\\]', db_path):
+                # This is a Windows path on a Linux system - ignore it and use default
+                logger.warning(f"Detected Windows path '{db_path}' on Linux system. Using default path instead.")
+                cwd = os.getcwd()
+                db_path = os.path.join(cwd, "enriched_data.db")
+        
+        # Normalize the path properly
+        db_path = os.path.normpath(db_path)
+        
+        # Check if it's an absolute path (Unix-style starting with /)
+        # On Linux/Unix, absolute paths start with /
+        if os.path.isabs(db_path) and db_path.startswith('/'):
+            # Absolute path - use as is (e.g., /data/enriched_data.db or /enriched_data.db)
+            self.db_path = db_path
+        else:
+            # Relative path - resolve to absolute path relative to current working directory
+            # On Fly.io, working directory is /app (from Dockerfile WORKDIR)
+            self.db_path = os.path.abspath(db_path)
+        
         self.conn = None
+        
+        # Log the database path being used for debugging
+        logger.info(f"Initializing database at path: {self.db_path}")
+        logger.info(f"Current working directory: {os.getcwd()}")
+        logger.info(f"DB_PATH environment variable: {os.getenv('DB_PATH', 'not set')}")
+        logger.info(f"Database file exists: {os.path.exists(self.db_path)}")
+        
         self._create_tables()
     
     def _create_tables(self):
         """Create database tables if they don't exist."""
+        # Ensure parent directory exists
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+            logger.info(f"Created database directory: {db_dir}")
+        
         self.conn = sqlite3.connect(self.db_path)
         cursor = self.conn.cursor()
         
@@ -47,7 +96,11 @@ class Database:
         """)
         
         self.conn.commit()
-        logger.info(f"Database initialized: {self.db_path}")
+        
+        # Check if there are existing records
+        cursor.execute("SELECT COUNT(*) FROM enriched_records")
+        record_count = cursor.fetchone()[0]
+        logger.info(f"Database initialized: {self.db_path} (existing records: {record_count})")
     
     def product_exists(self, product_id: int, review_id: Optional[int] = None) -> bool:
         """
@@ -263,6 +316,38 @@ class Database:
         cursor.execute("DELETE FROM enriched_records")
         self.conn.commit()
         logger.info("All records cleared from database")
+    
+    def get_table_info(self) -> Dict:
+        """
+        Get information about the database tables.
+        
+        Returns:
+            Dictionary with table information
+        """
+        cursor = self.conn.cursor()
+        
+        # Get all tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = [row[0] for row in cursor.fetchall()]
+        
+        info = {
+            "tables": tables,
+            "enriched_records_exists": "enriched_records" in tables
+        }
+        
+        if "enriched_records" in tables:
+            # Get record count
+            cursor.execute("SELECT COUNT(*) FROM enriched_records;")
+            info["enriched_records_count"] = cursor.fetchone()[0]
+            
+            # Get table schema
+            cursor.execute("PRAGMA table_info(enriched_records);")
+            info["enriched_records_schema"] = [
+                {"name": row[1], "type": row[2], "notnull": row[3], "default": row[4]}
+                for row in cursor.fetchall()
+            ]
+        
+        return info
     
     def close(self):
         """Close database connection."""
