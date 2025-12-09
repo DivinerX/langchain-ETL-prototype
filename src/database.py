@@ -49,16 +49,54 @@ class Database:
         self.conn.commit()
         logger.info(f"Database initialized: {self.db_path}")
     
-    def insert_record(self, record: Dict) -> int:
+    def product_exists(self, product_id: int, review_id: Optional[int] = None) -> bool:
+        """
+        Check if a product (or product-review combination) already exists in the database.
+        
+        Args:
+            product_id: Product ID to check
+            review_id: Optional review ID to check (if provided, checks for product_id + review_id combination)
+            
+        Returns:
+            True if product exists, False otherwise
+        """
+        cursor = self.conn.cursor()
+        
+        if review_id is not None:
+            # Check for product_id + review_id combination
+            cursor.execute("""
+                SELECT COUNT(*) FROM enriched_records 
+                WHERE product_id = ? AND review_id = ?
+            """, (product_id, review_id))
+        else:
+            # Check for product_id only
+            cursor.execute("""
+                SELECT COUNT(*) FROM enriched_records 
+                WHERE product_id = ?
+            """, (product_id,))
+        
+        count = cursor.fetchone()[0]
+        return count > 0
+    
+    def insert_record(self, record: Dict) -> Optional[int]:
         """
         Insert a single record into the database.
+        Checks for duplicates before inserting based on product_id (and review_id if present).
         
         Args:
             record: Dictionary containing record data
             
         Returns:
-            ID of inserted record
+            ID of inserted record, or None if record already exists (duplicate)
         """
+        product_id = record.get('ID')
+        review_id = record.get('review_id')
+        
+        # Check if product already exists
+        if self.product_exists(product_id, review_id):
+            logger.debug(f"Skipping duplicate record: product_id={product_id}, review_id={review_id}")
+            return None
+        
         cursor = self.conn.cursor()
         
         cursor.execute("""
@@ -66,12 +104,12 @@ class Database:
             (product_id, product_name, category, price, review_text, review_id, sentiment, topics, summary)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            record.get('ID'),
+            product_id,
             record.get('Name'),
             record.get('Category'),
             record.get('Price'),
             record.get('review_text', ''),
-            record.get('review_id'),
+            review_id,
             record.get('sentiment', ''),
             record.get('topics', ''),
             record.get('summary', '')
@@ -83,6 +121,7 @@ class Database:
     def insert_dataframe(self, df: pd.DataFrame):
         """
         Insert DataFrame records into the database.
+        Skips duplicate records based on product_id (and review_id if present).
         
         Args:
             df: DataFrame to insert
@@ -91,14 +130,22 @@ class Database:
         # self.clear_all_records()
         
         total = len(df)
+        inserted_count = 0
+        skipped_count = 0
+        
         for idx, row in df.iterrows():
             record = row.to_dict()
-            self.insert_record(record)
+            result = self.insert_record(record)
+            
+            if result is not None:
+                inserted_count += 1
+            else:
+                skipped_count += 1
             
             if (idx + 1) % 10 == 0 or (idx + 1) == total:
-                logger.info(f"Inserted {idx + 1}/{total} records...")
+                logger.info(f"Processed {idx + 1}/{total} records (Inserted: {inserted_count}, Skipped: {skipped_count})...")
         
-        logger.info(f"Database insert complete: {total} records")
+        logger.info(f"Database insert complete: {inserted_count} records inserted, {skipped_count} duplicates skipped")
     
     def get_all_records(self) -> pd.DataFrame:
         """

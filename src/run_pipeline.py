@@ -29,19 +29,19 @@ from typing import List, Optional
 logger = logging.getLogger(__name__)
 
 
-def setup_pinecone() -> Optional[Pinecone]:
+def setup_pinecone() -> tuple[Optional[Pinecone], Optional[int]]:
     """
     Setup Pinecone connection for vector storage.
     
     Returns:
-        Pinecone client or None if not configured
+        Tuple of (Pinecone client or None, index dimension or None)
     """
     api_key = os.getenv("PINECONE_API_KEY")
     index_name = os.getenv("PINECONE_INDEX_NAME")
     
     if not api_key or not index_name:
         logger.warning("Pinecone credentials not found. Skipping vector storage.")
-        return None
+        return None, None
     
     try:
         pc = Pinecone(api_key=api_key)
@@ -53,7 +53,7 @@ def setup_pinecone() -> Optional[Pinecone]:
             logger.info(f"Creating Pinecone index: {index_name}")
             pc.create_index(
                 name=index_name,
-                dimension=1536,  # OpenAI ada-002 embedding dimension
+                dimension=512,  # Default embedding dimension
                 metric="cosine",
                 spec=ServerlessSpec(
                     cloud="aws",
@@ -61,16 +61,38 @@ def setup_pinecone() -> Optional[Pinecone]:
                 )
             )
             logger.info(f"Index {index_name} created successfully")
+            return pc, 512  # Return client and dimension
         else:
-            logger.info(f"Using existing Pinecone index: {index_name}")
+            # Get existing index dimension
+            try:
+                index = pc.Index(index_name)
+                # Get dimension from index stats or description
+                index_stats = index.describe_index_stats()
+                # Try to get dimension from index info
+                try:
+                    index_info = pc.describe_index(index_name)
+                    dimension = index_info.dimension
+                except AttributeError:
+                    # Fallback: try to get from index stats or use default
+                    # If we can't get it, we'll need to check the first vector
+                    dimension = None
+                    logger.warning(f"Could not determine index dimension, will check from embeddings")
+                
+                if dimension:
+                    logger.info(f"Using existing Pinecone index: {index_name} (dimension: {dimension})")
+                else:
+                    logger.info(f"Using existing Pinecone index: {index_name}")
+                return pc, dimension
+            except Exception as e:
+                logger.error(f"Error getting index info: {e}")
+                return pc, None
         
-        return pc
     except Exception as e:
         logger.error(f"Error setting up Pinecone: {e}")
-        return None
+        return None, None
 
 
-def upsert_to_pinecone(pc: Pinecone, df, index_name: str):
+def upsert_to_pinecone(pc: Pinecone, df, index_name: str, expected_dimension: Optional[int] = None):
     """
     Upsert embeddings to Pinecone.
     
@@ -78,6 +100,7 @@ def upsert_to_pinecone(pc: Pinecone, df, index_name: str):
         pc: Pinecone client
         df: DataFrame with embeddings
         index_name: Name of the Pinecone index
+        expected_dimension: Expected dimension of the index (for validation)
     """
     if pc is None:
         return
@@ -87,22 +110,43 @@ def upsert_to_pinecone(pc: Pinecone, df, index_name: str):
         
         vectors_to_upsert = []
         for idx, row in df.iterrows():
-            if row.get('embedding') is not None and pd.notna(row.get('embedding')):
-                vector_id = f"record_{row.get('ID', idx)}"
-                metadata = {
-                    'product_id': int(row.get('ID', 0)),
-                    'product_name': str(row.get('Name', '')),
-                    'category': str(row.get('Category', '')),
-                    'sentiment': str(row.get('sentiment', '')),
-                    'topics': str(row.get('topics', '')),
-                    'review_text': str(row.get('review_text', ''))[:1000]  # Limit metadata size
-                }
-                
-                vectors_to_upsert.append({
-                    'id': vector_id,
-                    'values': row['embedding'],
-                    'metadata': metadata
-                })
+            embedding = row.get('embedding')
+            
+            # Skip if embedding is None or invalid
+            if embedding is None:
+                continue
+            
+            # Check if embedding is valid (has length > 0)
+            # This avoids the ambiguous truth value error with arrays
+            try:
+                if not hasattr(embedding, '__len__') or len(embedding) == 0:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            
+            vector_id = f"record_{row.get('ID', idx)}"
+            metadata = {
+                'product_id': int(row.get('ID', 0)),
+                'product_name': str(row.get('Name', '')),
+                'category': str(row.get('Category', '')),
+                'sentiment': str(row.get('sentiment', '')),
+                'topics': str(row.get('topics', '')),
+                'review_text': str(row.get('review_text', ''))[:1000]  # Limit metadata size
+            }
+            
+            # Convert embedding to list if it's a numpy array or pandas Series
+            if hasattr(embedding, 'tolist'):
+                embedding_values = embedding.tolist()
+            elif isinstance(embedding, (list, tuple)):
+                embedding_values = list(embedding)
+            else:
+                embedding_values = embedding
+            
+            vectors_to_upsert.append({
+                'id': vector_id,
+                'values': embedding_values,
+                'metadata': metadata
+            })
         
         if vectors_to_upsert:
             # Upsert in batches
@@ -114,7 +158,25 @@ def upsert_to_pinecone(pc: Pinecone, df, index_name: str):
             
             logger.info(f"Successfully upserted {len(vectors_to_upsert)} vectors to Pinecone")
     except Exception as e:
+        error_msg = str(e)
+        # Check if it's a dimension mismatch error
+        if "dimension" in error_msg.lower() and ("does not match" in error_msg.lower() or "match" in error_msg.lower()):
+            # Extract expected dimension from error message
+            import re
+            # Try multiple patterns to extract dimension
+            match = re.search(r'dimension[^\d]*(\d+)', error_msg, re.IGNORECASE)
+            if not match:
+                match = re.search(r'(\d+)\s+does not match', error_msg, re.IGNORECASE)
+            if not match:
+                match = re.search(r'match the dimension of the index\s+(\d+)', error_msg, re.IGNORECASE)
+            
+            if match:
+                expected_dim = int(match.group(1))
+                logger.error(f"Dimension mismatch detected. Index expects {expected_dim} dimensions.")
+                raise ValueError(f"Embedding dimension mismatch. Index requires {expected_dim} dimensions. "
+                               f"Please regenerate embeddings with dimensions={expected_dim}.")
         logger.error(f"Error upserting to Pinecone: {e}")
+        raise
 
 
 def run_pipeline():
@@ -181,12 +243,68 @@ def run_pipeline():
     
     # Step 7: Upsert to Pinecone (if configured)
     logger.info("\n[7/7] Upserting embeddings to Pinecone...")
-    pc = setup_pinecone()
+    pc, index_dimension = setup_pinecone()
     if pc:
         index_name = os.getenv("PINECONE_INDEX_NAME")
         records_with_embeddings = final_data[final_data['embedding'].notna()].copy()
         if len(records_with_embeddings) > 0:
-            upsert_to_pinecone(pc, records_with_embeddings, index_name)
+            # Check if embeddings match index dimension
+            sample_embedding = None
+            for idx, row in records_with_embeddings.iterrows():
+                emb = row.get('embedding')
+                if emb is not None and hasattr(emb, '__len__') and len(emb) > 0:
+                    sample_embedding = emb
+                    break
+            
+            if sample_embedding is not None:
+                embedding_dim = len(sample_embedding)
+                
+                # If we know the index dimension and they don't match, regenerate
+                if index_dimension and embedding_dim != index_dimension:
+                    logger.info(f"Embedding dimension ({embedding_dim}) doesn't match index dimension ({index_dimension})")
+                    logger.info("Regenerating embeddings with correct dimension...")
+                    from embeddings import EmbeddingGenerator
+                    generator = EmbeddingGenerator(model="text-embedding-3-small")
+                    for idx, row in records_with_embeddings.iterrows():
+                        text = row.get('review_text', '')
+                        if text and len(text.strip()) > 0:
+                            embedding = generator.generate_embedding(text, dimensions=index_dimension)
+                            records_with_embeddings.at[idx, 'embedding'] = embedding
+                    logger.info("Embeddings regenerated with correct dimension")
+                else:
+                    # Try to upsert - will catch dimension mismatch if it occurs
+                    try:
+                        upsert_to_pinecone(pc, records_with_embeddings, index_name, expected_dimension=index_dimension)
+                    except ValueError as ve:
+                        # Dimension mismatch error - regenerate embeddings
+                        error_msg = str(ve)
+                        import re
+                        # Try multiple patterns to match the error message
+                        match = re.search(r'(\d+)\s+dimensions', error_msg)
+                        if not match:
+                            match = re.search(r'dimension\s+(\d+)', error_msg, re.IGNORECASE)
+                        if not match:
+                            match = re.search(r'(\d+)\s+does not match', error_msg)
+                        if not match:
+                            match = re.search(r'match the dimension of the index\s+(\d+)', error_msg, re.IGNORECASE)
+                        if match:
+                            expected_dim = int(match.group(1))
+                            logger.info(f"Detected index dimension mismatch. Expected: {expected_dim}, Got: {embedding_dim}")
+                            logger.info("Regenerating embeddings with correct dimension...")
+                            from embeddings import EmbeddingGenerator
+                            generator = EmbeddingGenerator(model="text-embedding-3-small")
+                            for idx, row in records_with_embeddings.iterrows():
+                                text = row.get('review_text', '')
+                                if text and len(text.strip()) > 0:
+                                    embedding = generator.generate_embedding(text, dimensions=expected_dim)
+                                    records_with_embeddings.at[idx, 'embedding'] = embedding
+                            logger.info("Embeddings regenerated with correct dimension")
+                            # Retry upsert
+                            upsert_to_pinecone(pc, records_with_embeddings, index_name, expected_dimension=expected_dim)
+                        else:
+                            raise
+            else:
+                logger.info("No valid embeddings found to upsert")
         else:
             logger.info("No embeddings to upsert")
     else:

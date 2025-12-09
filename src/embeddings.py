@@ -15,12 +15,13 @@ logger = logging.getLogger(__name__)
 class EmbeddingGenerator:
     """Class for generating embeddings using OpenAI."""
     
-    def __init__(self, model: str = "text-embedding-ada-002"):
+    def __init__(self, model: str = "text-embedding-3-small", dimensions: Optional[int] = 512):
         """
         Initialize the embedding generator.
         
         Args:
-            model: OpenAI embedding model name
+            model: OpenAI embedding model name (default: text-embedding-3-small)
+            dimensions: Dimension size (default: 512, only supported for text-embedding-3 models)
         """
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
@@ -28,13 +29,15 @@ class EmbeddingGenerator:
         
         self.client = OpenAI(api_key=api_key)
         self.model = model
+        self.dimensions = dimensions
     
-    def generate_embedding(self, text: str) -> Optional[List[float]]:
+    def generate_embedding(self, text: str, dimensions: Optional[int] = None) -> Optional[List[float]]:
         """
         Generate embedding for a single text.
         
         Args:
             text: Text to generate embedding for
+            dimensions: Optional dimension size (overrides instance dimensions if provided)
             
         Returns:
             List of floats representing the embedding, or None if error
@@ -43,10 +46,20 @@ class EmbeddingGenerator:
             return None
         
         try:
-            response = self.client.embeddings.create(
-                model=self.model,
-                input=text
-            )
+            # Use provided dimensions or instance dimensions
+            dims = dimensions if dimensions is not None else self.dimensions
+            
+            # Build request parameters
+            params = {
+                "model": self.model,
+                "input": text
+            }
+            
+            # Add dimensions parameter if using text-embedding-3 models
+            if dims is not None and "text-embedding-3" in self.model:
+                params["dimensions"] = dims
+            
+            response = self.client.embeddings.create(**params)
             return response.data[0].embedding
         except Exception as e:
             logger.error(f"Error generating embedding: {e}")
@@ -69,18 +82,19 @@ class EmbeddingGenerator:
         return embeddings
 
 
-def add_embeddings_to_dataframe(df, text_column: str = 'review_text'):
+def add_embeddings_to_dataframe(df, text_column: str = 'review_text', dimensions: int = 512):
     """
     Add embeddings column to DataFrame.
     
     Args:
         df: DataFrame to add embeddings to
         text_column: Name of the column containing text
+        dimensions: Embedding dimension size (default: 512)
         
     Returns:
         DataFrame with embeddings column
     """
-    generator = EmbeddingGenerator()
+    generator = EmbeddingGenerator(dimensions=dimensions)
     
     df = df.copy()
     df['embedding'] = None
