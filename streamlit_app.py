@@ -121,11 +121,11 @@ with tab1:
         if available_columns:
             st.dataframe(
                 df[available_columns],
-                use_container_width=True,
+                width='stretch',
                 hide_index=True
             )
         else:
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width='stretch', hide_index=True)
         
         # Display detailed view for selected record
         if len(df) > 0:

@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from pydantic import BaseModel
-from database import Database
+from src.database import Database
 
 app = FastAPI(title="AI-Powered Data Enrichment API", version="1.0.0")
 

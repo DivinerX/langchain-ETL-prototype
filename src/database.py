@@ -229,9 +229,9 @@ class Database:
 
 if __name__ == "__main__":
     # Test database operations
-    from ingest import load_structured_data, load_unstructured_data
-    from clean import clean_structured_data, clean_unstructured_data
-    from merge import merge_data
+    from src.ingest import load_structured_data, load_unstructured_data
+    from src.clean import clean_structured_data, clean_unstructured_data
+    from src.merge import merge_data
     
     structured = load_structured_data()
     unstructured = load_unstructured_data()

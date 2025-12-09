@@ -17,12 +17,12 @@ logging.basicConfig(
 )
 
 # Import all pipeline modules
-from ingest import load_structured_data, load_unstructured_data
-from clean import clean_structured_data, clean_unstructured_data
-from merge import merge_data
-from enrich_llm import enrich_dataframe
-from embeddings import add_embeddings_to_dataframe
-from database import Database
+from src.ingest import load_structured_data, load_unstructured_data
+from src.clean import clean_structured_data, clean_unstructured_data
+from src.merge import merge_data
+from src.enrich_llm import enrich_dataframe
+from src.embeddings import add_embeddings_to_dataframe
+from src.database import Database
 from pinecone import Pinecone, ServerlessSpec
 from typing import List, Optional
 
