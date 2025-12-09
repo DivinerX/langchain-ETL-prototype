@@ -52,7 +52,7 @@ def fuzzy_match_text_to_name(text: str, names: List[str], threshold: int = 60) -
     for candidate in potential_names:
         result = process.extractOne(candidate, names, scorer=fuzz.partial_ratio)
         if result:
-            match, score = result
+            match, score, index = result
             if score > best_score and score >= threshold:
                 best_score = score
                 best_match = match
@@ -63,64 +63,102 @@ def fuzzy_match_text_to_name(text: str, names: List[str], threshold: int = 60) -
 def merge_data(structured_df: pd.DataFrame, unstructured_data: List[Dict]) -> pd.DataFrame:
     """
     Merge structured and unstructured data using fuzzy matching.
+    Supports multiple reviews per product by creating one row per review.
     
     Args:
         structured_df: DataFrame with structured data
         unstructured_data: List of dictionaries with unstructured data
         
     Returns:
-        Merged DataFrame
+        Merged DataFrame with one row per review (products can appear multiple times)
     """
-    # Create a copy of structured data
-    merged_df = structured_df.copy()
-    
-    # Initialize columns for unstructured data
-    merged_df['review_text'] = ""
-    merged_df['review_id'] = None
-    
     # Get list of product names for matching
     product_names = structured_df['Name'].tolist()
     
-    # Create a mapping of matched unstructured data
-    matched_reviews = {}
+    # List to store all merged records (one per review)
+    merged_records = []
     
+    # Track which reviews have been matched to avoid duplicates
+    matched_review_ids = set()
+    
+    # First pass: Match reviews by product ID (exact match)
     for review in unstructured_data:
         review_id = review.get('id')
         review_text = review.get('text', '')
         
-        # Try to match by ID first (if review has matching ID)
-        if review_id and review_id in structured_df['ID'].values:
-            idx = structured_df[structured_df['ID'] == review_id].index[0]
-            if idx not in matched_reviews:
-                matched_reviews[idx] = {
-                    'review_text': review_text,
-                    'review_id': review_id
-                }
+        if not review_text:
             continue
         
-        # Otherwise, use fuzzy matching
+        # Try to match by ID first (if review has matching product ID)
+        if review_id and review_id in structured_df['ID'].values:
+            product_row = structured_df[structured_df['ID'] == review_id].iloc[0]
+            
+            # Create a record for this review
+            record = {
+                'ID': product_row['ID'],
+                'Name': product_row['Name'],
+                'Category': product_row['Category'],
+                'Price': product_row['Price'],
+                'review_text': review_text,
+                'review_id': review_id
+            }
+            merged_records.append(record)
+            matched_review_ids.add(review_id)
+    
+    # Second pass: Match remaining reviews using fuzzy matching
+    for review in unstructured_data:
+        review_id = review.get('id')
+        review_text = review.get('text', '')
+        
+        if not review_text:
+            continue
+        
+        # Skip if already matched by ID
+        if review_id in matched_review_ids:
+            continue
+        
+        # Use fuzzy matching to find product
         best_match, score = fuzzy_match_text_to_name(review_text, product_names)
         
         if best_match:
-            # Find the index of the matched product
-            idx = structured_df[structured_df['Name'] == best_match].index[0]
+            # Find the product row
+            product_row = structured_df[structured_df['Name'] == best_match].iloc[0]
             
-            # Only assign if not already matched or if this match is better
-            if idx not in matched_reviews:
-                matched_reviews[idx] = {
-                    'review_text': review_text,
-                    'review_id': review_id
-                }
+            # Create a record for this review
+            record = {
+                'ID': product_row['ID'],
+                'Name': product_row['Name'],
+                'Category': product_row['Category'],
+                'Price': product_row['Price'],
+                'review_text': review_text,
+                'review_id': review_id
+            }
+            merged_records.append(record)
+            matched_review_ids.add(review_id)
     
-    # Assign matched reviews to dataframe
-    for idx, review_data in matched_reviews.items():
-        merged_df.at[idx, 'review_text'] = review_data['review_text']
-        merged_df.at[idx, 'review_id'] = review_data['review_id']
+    # Create DataFrame from merged records
+    if merged_records:
+        merged_df = pd.DataFrame(merged_records)
+    else:
+        # If no reviews matched, return empty DataFrame with correct columns
+        merged_df = structured_df.copy()
+        merged_df['review_text'] = ""
+        merged_df['review_id'] = None
+        return merged_df
     
-    # Remove rows without reviews (optional - comment out if you want to keep all products)
-    # merged_df = merged_df[merged_df['review_text'] != ""]
+    # Add products without reviews (optional - uncomment if you want to keep all products)
+    products_with_reviews = set(merged_df['ID'].unique())
+    products_without_reviews = structured_df[~structured_df['ID'].isin(products_with_reviews)].copy()
+    if len(products_without_reviews) > 0:
+        products_without_reviews['review_text'] = ""
+        products_without_reviews['review_id'] = None
+        merged_df = pd.concat([merged_df, products_without_reviews], ignore_index=True)
     
-    logger.info(f"Merged data: {len(merged_df)} records, {len(matched_reviews)} with reviews")
+    # Count unique products and total reviews
+    unique_products = merged_df['ID'].nunique()
+    total_reviews = len(merged_df[merged_df['review_text'] != ''])
+    
+    logger.info(f"Merged data: {len(merged_df)} total records ({unique_products} unique products, {total_reviews} reviews)")
     return merged_df
 
 

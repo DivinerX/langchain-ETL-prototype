@@ -1,6 +1,7 @@
 """
 FastAPI application for exposing enriched data through REST endpoints.
 """
+import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
@@ -48,7 +49,9 @@ async def root():
         "endpoints": {
             "GET /records": "Get all enriched records",
             "GET /records/{id}": "Get a specific record by ID",
-            "GET /search": "Search records by query (semantic search)"
+            "GET /search": "Search records by query (semantic search)",
+            "GET /products/{product_id}/reviews": "Get all reviews for a specific product",
+            "GET /products/{product_id}/summary": "Get product summary with review statistics"
         }
     }
 
@@ -63,6 +66,8 @@ async def get_all_records():
     """
     try:
         df = db.get_all_records()
+        # Replace NaN values with None to ensure Pydantic validation passes
+        df = df.replace({np.nan: None})
         records = df.to_dict('records')
         return records
     except Exception as e:
@@ -84,6 +89,8 @@ async def get_record_by_id(record_id: int):
         record = db.get_record_by_id(record_id)
         if not record:
             raise HTTPException(status_code=404, detail=f"Record with ID {record_id} not found")
+        # Replace any NaN values with None
+        record = {k: (None if (isinstance(v, float) and np.isnan(v)) else v) for k, v in record.items()}
         return record
     except HTTPException:
         raise
@@ -125,10 +132,60 @@ async def search_records(
         else:
             df = db.get_all_records()
         
+        # Replace NaN values with None to ensure Pydantic validation passes
+        df = df.replace({np.nan: None})
         records = df.to_dict('records')
         return records
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error searching records: {str(e)}")
+
+
+@app.get("/products/{product_id}/reviews", response_model=List[RecordResponse])
+async def get_product_reviews(product_id: int):
+    """
+    Get all reviews for a specific product.
+    
+    Args:
+        product_id: ID of the product to get reviews for
+        
+    Returns:
+        List of all reviews for the product
+    """
+    try:
+        df = db.get_reviews_by_product_id(product_id)
+        if len(df) == 0:
+            raise HTTPException(status_code=404, detail=f"No reviews found for product ID {product_id}")
+        
+        # Replace NaN values with None to ensure Pydantic validation passes
+        df = df.replace({np.nan: None})
+        records = df.to_dict('records')
+        return records
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving reviews: {str(e)}")
+
+
+@app.get("/products/{product_id}/summary")
+async def get_product_summary(product_id: int):
+    """
+    Get product summary with aggregated review statistics.
+    
+    Args:
+        product_id: ID of the product to get summary for
+        
+    Returns:
+        Dictionary with product info and review statistics
+    """
+    try:
+        summary = db.get_product_summary(product_id)
+        if not summary:
+            raise HTTPException(status_code=404, detail=f"Product with ID {product_id} not found")
+        return summary
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving product summary: {str(e)}")
 
 
 @app.get("/health")

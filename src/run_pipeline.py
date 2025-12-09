@@ -2,10 +2,17 @@
 Main pipeline orchestrator that runs the complete data enrichment workflow.
 """
 import os
+import sys
 import pandas as pd
 import logging
+import time
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Add parent directory to path to allow imports
+parent_dir = Path(__file__).parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
 
 # Load environment variables
 load_dotenv()
@@ -24,6 +31,7 @@ from src.enrich_llm import enrich_dataframe
 from src.embeddings import add_embeddings_to_dataframe
 from src.database import Database
 from pinecone import Pinecone, ServerlessSpec
+from pinecone.exceptions import NotFoundException
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -95,6 +103,7 @@ def setup_pinecone() -> tuple[Optional[Pinecone], Optional[int]]:
 def upsert_to_pinecone(pc: Pinecone, df, index_name: str, expected_dimension: Optional[int] = None):
     """
     Upsert embeddings to Pinecone.
+    Clears the index before upserting to ensure a fresh start.
     
     Args:
         pc: Pinecone client
@@ -108,20 +117,80 @@ def upsert_to_pinecone(pc: Pinecone, df, index_name: str, expected_dimension: Op
     try:
         index = pc.Index(index_name)
         
+        # Clear the index before upserting
+        logger.info(f"Clearing Pinecone index: {index_name}")
+        
+        # Check index stats before delete
+        try:
+            stats_before = index.describe_index_stats()
+            logger.info(f"Index stats before delete: {stats_before}")
+        except Exception as e:
+            logger.debug(f"Could not get index stats before delete: {e}")
+        
+        try:
+            # Try to delete all vectors - use delete_all=True without namespace to delete from all namespaces
+            # This is safer than specifying namespace="" which might cause issues
+            logger.debug("Attempting delete_all=True without namespace parameter")
+            try:
+                index.delete(delete_all=True)
+                logger.info("Deleted all vectors from all namespaces")
+            except NotFoundException as e:
+                # If namespace not found, index is already empty - this is fine
+                if "Namespace not found" in str(e) or "namespace" in str(e).lower():
+                    logger.info(f"Index {index_name} is already empty (no namespace found), proceeding with upsert")
+                else:
+                    logger.warning(f"NotFoundException during delete: {e}")
+                    raise
+            except Exception as delete_error:
+                logger.warning(f"Delete operation error: {delete_error}, type: {type(delete_error).__name__}")
+                # Try alternative delete method
+                try:
+                    logger.debug("Trying delete with namespace=''")
+                    index.delete(delete_all=True, namespace="")
+                    logger.info("Deleted all vectors from default namespace")
+                except Exception as e2:
+                    logger.warning(f"Alternative delete also failed: {e2}. Proceeding with upsert anyway.")
+            
+            # Small delay to ensure delete operation completes
+            time.sleep(2)
+            
+            # Verify delete worked
+            try:
+                stats_after = index.describe_index_stats()
+                total_after = stats_after.get('total_vector_count', 0)
+                logger.info(f"Index stats after delete: {stats_after}")
+                if total_after > 0:
+                    logger.warning(f"WARNING: Index still has {total_after} vectors after delete operation")
+                else:
+                    logger.info(f"Index {index_name} cleared successfully (verified: 0 vectors)")
+            except Exception as e:
+                logger.debug(f"Could not verify delete: {e}")
+                logger.info(f"Index {index_name} delete operation completed")
+        except Exception as e:
+            # Log other errors but don't fail - might be empty index
+            logger.warning(f"Could not clear index (might be empty): {e}. Proceeding with upsert.")
+        
+        # Log dataframe info
+        logger.info(f"Preparing to upsert vectors from DataFrame with {len(df)} rows")
+        
         vectors_to_upsert = []
+        skipped_count = 0
         for idx, row in df.iterrows():
             embedding = row.get('embedding')
             
             # Skip if embedding is None or invalid
             if embedding is None:
+                skipped_count += 1
                 continue
             
             # Check if embedding is valid (has length > 0)
             # This avoids the ambiguous truth value error with arrays
             try:
                 if not hasattr(embedding, '__len__') or len(embedding) == 0:
+                    skipped_count += 1
                     continue
             except (TypeError, ValueError):
+                skipped_count += 1
                 continue
             
             vector_id = f"record_{row.get('ID', idx)}"
@@ -148,15 +217,121 @@ def upsert_to_pinecone(pc: Pinecone, df, index_name: str, expected_dimension: Op
                 'metadata': metadata
             })
         
+        logger.info(f"Prepared {len(vectors_to_upsert)} vectors to upsert (skipped {skipped_count} invalid embeddings)")
+        
         if vectors_to_upsert:
             # Upsert in batches
             batch_size = 100
+            total_batches = (len(vectors_to_upsert) + batch_size - 1) // batch_size
+            logger.info(f"Starting upsert of {len(vectors_to_upsert)} vectors in {total_batches} batch(es)")
+            
             for i in range(0, len(vectors_to_upsert), batch_size):
                 batch = vectors_to_upsert[i:i + batch_size]
-                index.upsert(vectors=batch)
-                logger.info(f"Upserted batch {i//batch_size + 1} to Pinecone ({len(batch)} vectors)")
+                batch_num = i//batch_size + 1
+                try:
+                    # Debug: Log first vector details
+                    if batch_num == 1 and len(batch) > 0:
+                        first_vector = batch[0]
+                        logger.debug(f"First vector in batch: id={first_vector.get('id')}, values_len={len(first_vector.get('values', []))}, metadata_keys={list(first_vector.get('metadata', {}).keys())}")
+                    
+                    # Upsert to default namespace (empty string) - explicitly specify to ensure consistency
+                    # If namespace parameter causes issues, it will fall back to default
+                    upsert_response = None
+                    upsert_success = False
+                    try:
+                        logger.debug(f"Attempting upsert with namespace='' for batch {batch_num}")
+                        upsert_response = index.upsert(vectors=batch, namespace="")
+                        upsert_success = True
+                        logger.debug(f"Upsert with namespace='' succeeded")
+                    except TypeError as te:
+                        # If namespace parameter not supported, use without it (defaults to empty namespace)
+                        logger.debug(f"Namespace parameter not supported, trying without namespace parameter: {te}")
+                        try:
+                            upsert_response = index.upsert(vectors=batch)
+                            upsert_success = True
+                            logger.debug(f"Upsert without namespace parameter succeeded")
+                        except Exception as e2:
+                            logger.error(f"Upsert failed even without namespace parameter: {e2}")
+                            raise
+                    except Exception as upsert_error:
+                        logger.error(f"Upsert with namespace='' failed: {upsert_error}")
+                        logger.error(f"Error type: {type(upsert_error).__name__}")
+                        raise
+                    
+                    # Log detailed response
+                    if upsert_response is not None:
+                        logger.info(f"Upsert response type: {type(upsert_response)}")
+                        logger.info(f"Upsert response: {upsert_response}")
+                        if hasattr(upsert_response, 'upserted_count'):
+                            logger.info(f"Upserted count from response: {upsert_response.upserted_count}")
+                        if hasattr(upsert_response, '__dict__'):
+                            logger.debug(f"Upsert response attributes: {upsert_response.__dict__}")
+                    
+                    logger.info(f"Upserted batch {batch_num}/{total_batches} to Pinecone ({len(batch)} vectors)")
+                except Exception as batch_error:
+                    logger.error(f"Error upserting batch {batch_num}: {batch_error}")
+                    logger.error(f"Error details: {type(batch_error).__name__}: {str(batch_error)}")
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    raise
+            
+            # Wait a moment for eventual consistency
+            time.sleep(2)
+            
+            # Verify the upsert by checking index stats
+            try:
+                # Check stats for default namespace (empty string)
+                stats = index.describe_index_stats()
+                total_vectors = stats.get('total_vector_count', 0)
+                
+                # Also check namespace-specific stats if available
+                namespaces = stats.get('namespaces', {})
+                default_ns_count = namespaces.get('', {}).get('vector_count', 0) if namespaces else 0
+                
+                logger.info(f"Index verification: {total_vectors} total vectors in index")
+                logger.info(f"Full index stats: {stats}")
+                if namespaces:
+                    logger.info(f"Namespace breakdown: {namespaces}")
+                if default_ns_count > 0:
+                    logger.info(f"Default namespace contains: {default_ns_count} vectors")
+                
+                # Try to query a vector to verify it's actually there
+                if len(vectors_to_upsert) > 0:
+                    test_vector_id = vectors_to_upsert[0].get('id')
+                    logger.debug(f"Attempting to fetch test vector: {test_vector_id}")
+                    try:
+                        # Try fetching the vector
+                        fetch_response = index.fetch(ids=[test_vector_id], namespace="")
+                        logger.info(f"Test fetch response: {fetch_response}")
+                        if test_vector_id in fetch_response.get('vectors', {}):
+                            logger.info(f"SUCCESS: Test vector {test_vector_id} is retrievable from index")
+                        else:
+                            logger.warning(f"WARNING: Test vector {test_vector_id} not found in fetch response")
+                    except Exception as fetch_error:
+                        logger.warning(f"Could not fetch test vector: {fetch_error}")
+                        # Try without namespace
+                        try:
+                            fetch_response = index.fetch(ids=[test_vector_id])
+                            logger.info(f"Test fetch (no namespace) response: {fetch_response}")
+                        except Exception as fetch_error2:
+                            logger.warning(f"Could not fetch test vector without namespace: {fetch_error2}")
+                
+                if total_vectors == 0 and default_ns_count == 0:
+                    logger.warning(f"WARNING: Index appears empty after upsert! Expected {len(vectors_to_upsert)} vectors.")
+                    logger.warning("This might be due to namespace mismatch or eventual consistency delay.")
+                elif total_vectors != len(vectors_to_upsert) and default_ns_count != len(vectors_to_upsert):
+                    logger.warning(f"Vector count mismatch: Expected {len(vectors_to_upsert)}, found {total_vectors} total, {default_ns_count} in default namespace")
+                else:
+                    verified_count = default_ns_count if default_ns_count > 0 else total_vectors
+                    logger.info(f"Successfully verified: {verified_count} vectors in index")
+            except Exception as verify_error:
+                logger.warning(f"Could not verify index stats: {verify_error}")
+                import traceback
+                logger.warning(f"Verification traceback: {traceback.format_exc()}")
             
             logger.info(f"Successfully upserted {len(vectors_to_upsert)} vectors to Pinecone")
+        else:
+            logger.warning(f"No valid vectors to upsert. Check if embeddings are properly generated.")
     except Exception as e:
         error_msg = str(e)
         # Check if it's a dimension mismatch error
@@ -263,7 +438,7 @@ def run_pipeline():
                 if index_dimension and embedding_dim != index_dimension:
                     logger.info(f"Embedding dimension ({embedding_dim}) doesn't match index dimension ({index_dimension})")
                     logger.info("Regenerating embeddings with correct dimension...")
-                    from embeddings import EmbeddingGenerator
+                    from src.embeddings import EmbeddingGenerator
                     generator = EmbeddingGenerator(model="text-embedding-3-small")
                     for idx, row in records_with_embeddings.iterrows():
                         text = row.get('review_text', '')
@@ -291,7 +466,7 @@ def run_pipeline():
                             expected_dim = int(match.group(1))
                             logger.info(f"Detected index dimension mismatch. Expected: {expected_dim}, Got: {embedding_dim}")
                             logger.info("Regenerating embeddings with correct dimension...")
-                            from embeddings import EmbeddingGenerator
+                            from src.embeddings import EmbeddingGenerator
                             generator = EmbeddingGenerator(model="text-embedding-3-small")
                             for idx, row in records_with_embeddings.iterrows():
                                 text = row.get('review_text', '')

@@ -205,6 +205,58 @@ class Database:
         df = pd.read_sql_query(query, self.conn, params=(f'%{topic}%',))
         return df
     
+    def get_reviews_by_product_id(self, product_id: int) -> pd.DataFrame:
+        """
+        Get all reviews for a specific product.
+        
+        Args:
+            product_id: Product ID to get reviews for
+            
+        Returns:
+            DataFrame with all reviews for the product
+        """
+        query = "SELECT * FROM enriched_records WHERE product_id = ? AND review_text != '' AND review_text IS NOT NULL"
+        df = pd.read_sql_query(query, self.conn, params=(product_id,))
+        return df
+    
+    def get_product_summary(self, product_id: int) -> Optional[Dict]:
+        """
+        Get product information with aggregated review statistics.
+        
+        Args:
+            product_id: Product ID to get summary for
+            
+        Returns:
+            Dictionary with product info and review statistics, or None if not found
+        """
+        # Get product info (from first record with this product_id)
+        query = """
+            SELECT product_id, product_name, category, price, 
+                   COUNT(*) as review_count,
+                   SUM(CASE WHEN sentiment = 'positive' THEN 1 ELSE 0 END) as positive_count,
+                   SUM(CASE WHEN sentiment = 'negative' THEN 1 ELSE 0 END) as negative_count,
+                   SUM(CASE WHEN sentiment = 'neutral' THEN 1 ELSE 0 END) as neutral_count
+            FROM enriched_records 
+            WHERE product_id = ?
+            GROUP BY product_id, product_name, category, price
+        """
+        df = pd.read_sql_query(query, self.conn, params=(product_id,))
+        
+        if len(df) == 0:
+            return None
+        
+        row = df.iloc[0]
+        return {
+            'product_id': int(row['product_id']),
+            'product_name': row['product_name'],
+            'category': row['category'],
+            'price': float(row['price']) if pd.notna(row['price']) else None,
+            'review_count': int(row['review_count']),
+            'positive_count': int(row['positive_count']),
+            'negative_count': int(row['negative_count']),
+            'neutral_count': int(row['neutral_count'])
+        }
+    
     def clear_all_records(self):
         """Clear all records from the database."""
         cursor = self.conn.cursor()

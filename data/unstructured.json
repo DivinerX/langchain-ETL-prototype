@@ -38,6 +38,257 @@
   {
     "id": 10,
     "text": "Water bottle keeps drinks cold for hours. Love the design and it's leak-proof. Great for workouts!"
+  },
+  {
+    "id": 11,
+    "text": "Mechanical keyboard feels amazing to type on. The clicky switches are satisfying and build quality is solid."
+  },
+  {
+    "id": 12,
+    "text": "Wireless mouse is responsive and comfortable. Battery life is excellent, lasts months on a single charge."
+  },
+  {
+    "id": 13,
+    "text": "Monitor stand is well-built and helps organize my desk. The extra space underneath is very useful."
+  },
+  {
+    "id": 14,
+    "text": "Standing desk is a game changer for my back pain. The motor is quiet and transitions smoothly between heights."
+  },
+  {
+    "id": 15,
+    "text": "Ergonomic chair is worth every penny. My back pain has significantly reduced since using it daily."
+  },
+  {
+    "id": 16,
+    "text": "Noise cancelling headphones block out everything perfectly. Great for focus work and travel. Battery could be better though."
+  },
+  {
+    "id": 17,
+    "text": "Gaming mouse has excellent precision and customizable buttons. Perfect for FPS games, highly responsive."
+  },
+  {
+    "id": 18,
+    "text": "Webcam HD produces crisp video quality. Great for video calls and streaming. Auto-focus works well."
+  },
+  {
+    "id": 19,
+    "text": "Microphone USB captures clear audio with minimal background noise. Perfect for podcasting and voiceovers."
+  },
+  {
+    "id": 20,
+    "text": "Tablet stand is adjustable and holds my device securely. Good for reading and video watching."
+  },
+  {
+    "id": 21,
+    "text": "Phone stand is simple but effective. Holds my phone steady for video calls. Good value for the price."
+  },
+  {
+    "id": 22,
+    "text": "Wireless charger works well but is slower than wired charging. Convenient for overnight charging though."
+  },
+  {
+    "id": 23,
+    "text": "Power bank charges my devices quickly. The capacity is good for a full day of heavy use. Compact design."
+  },
+  {
+    "id": 24,
+    "text": "HDMI cable works perfectly, no issues with 4K video. Simple and reliable, exactly what I needed."
+  },
+  {
+    "id": 25,
+    "text": "Ethernet cable provides stable internet connection. Much better than WiFi for gaming and streaming."
+  },
+  {
+    "id": 26,
+    "text": "Router WiFi has excellent range and coverage. Handles multiple devices without lag. Setup was straightforward."
+  },
+  {
+    "id": 27,
+    "text": "Smart bulb changes colors smoothly and works with voice assistants. App is easy to use and scheduling works great."
+  },
+  {
+    "id": 28,
+    "text": "Smart plug allows me to control appliances remotely. Great for energy saving and home automation."
+  },
+  {
+    "id": 29,
+    "text": "Air purifier noticeably improves air quality in my bedroom. Filters are easy to replace and it's quiet on low settings."
+  },
+  {
+    "id": 30,
+    "text": "Robot vacuum cleans thoroughly and navigates well. Saves me so much time! App control is convenient."
+  },
+  {
+    "id": 31,
+    "text": "Instant Pot cooks everything perfectly and quickly. Love the pressure cooking feature for meal prep."
+  },
+  {
+    "id": 32,
+    "text": "Air fryer makes crispy food without all the oil. Healthier alternative to deep frying, very satisfied."
+  },
+  {
+    "id": 33,
+    "text": "Toaster toasts evenly on both sides. Simple to use and clean. Reliable for daily breakfast."
+  },
+  {
+    "id": 34,
+    "text": "Blender makes smooth smoothies and soups. Powerful motor handles frozen fruits without issues."
+  },
+  {
+    "id": 35,
+    "text": "Food processor saves so much time in the kitchen. Chops, slices, and mixes everything perfectly."
+  },
+  {
+    "id": 36,
+    "text": "Mixer stand is powerful and handles heavy dough easily. Attachments are versatile and well-made."
+  },
+  {
+    "id": 37,
+    "text": "Cookware set is non-stick and heats evenly. Great value for a complete set, cleans easily."
+  },
+  {
+    "id": 38,
+    "text": "Knife set stays sharp and cuts smoothly. The block keeps them organized and protected."
+  },
+  {
+    "id": 39,
+    "text": "Cutting board is durable and doesn't slide around. Easy to clean and large enough for big meals."
+  },
+  {
+    "id": 40,
+    "text": "Dish rack dries dishes quickly and doesn't take up much counter space. Well-designed and functional."
+  },
+  {
+    "id": 41,
+    "text": "Running shorts are lightweight and breathable. Perfect for hot weather runs, no chafing issues."
+  },
+  {
+    "id": 42,
+    "text": "Workout tank wicks moisture well and fits comfortably. Great for gym sessions and outdoor activities."
+  },
+  {
+    "id": 61,
+    "text": "Smartphone case protects well from drops. Fits perfectly and doesn't add much bulk to the phone."
+  },
+  {
+    "id": 62,
+    "text": "Screen protector applies easily without bubbles. Clear and doesn't affect touch sensitivity."
+  },
+  {
+    "id": 63,
+    "text": "Phone grip makes holding my phone easier. Sticky enough to stay on but easy to remove when needed."
+  },
+  {
+    "id": 64,
+    "text": "Car mount holds phone securely while driving. Adjustable angle and easy to install."
+  },
+  {
+    "id": 65,
+    "text": "Car charger charges quickly on long trips. Dual ports are convenient for multiple devices."
+  },
+  {
+    "id": 66,
+    "text": "Portable SSD is fast and reliable. Great for backing up photos and videos, very compact."
+  },
+  {
+    "id": 67,
+    "text": "USB hub expands my laptop ports effectively. All ports work simultaneously without issues."
+  },
+  {
+    "id": 68,
+    "text": "SD card has fast read and write speeds. Perfect for camera and video recording, reliable storage."
+  },
+  {
+    "id": 69,
+    "text": "External hard drive has plenty of space and fast transfer speeds. Great for backups and media storage."
+  },
+  {
+    "id": 70,
+    "text": "Printer produces clear prints and is easy to set up. Wireless printing works well from all devices."
+  },
+  {
+    "id": 101,
+    "text": "I absolutely love these wireless headphones! The sound quality is amazing and the battery lasts forever. Best purchase I've made this year."
+  },
+  {
+    "id": 102,
+    "text": "Wireless headphones are fantastic! Amazing sound quality and the battery really does last forever. Highly recommend to anyone looking for great audio."
+  },
+  {
+    "id": 103,
+    "text": "These wireless headphones exceeded my expectations. The sound is crystal clear and battery life is impressive. Worth every penny!"
+  },
+  {
+    "id": 104,
+    "text": "The smart watch is okay but the battery life is disappointing. It barely lasts a day with normal use. The fitness tracking is accurate though."
+  },
+  {
+    "id": 105,
+    "text": "Smart watch has decent features but battery drains too quickly. Fitness tracking works well but I expected better battery performance for the price."
+  },
+  {
+    "id": 106,
+    "text": "This coffee maker makes the perfect cup every morning. Easy to use and clean. Highly recommend for coffee lovers!"
+  },
+  {
+    "id": 107,
+    "text": "Coffee maker produces excellent coffee consistently. Simple operation and maintenance. Perfect addition to any kitchen!"
+  },
+  {
+    "id": 108,
+    "text": "Running shoes are comfortable but started showing wear after just a few months. Expected better durability for the price."
+  },
+  {
+    "id": 109,
+    "text": "Running shoes feel great on my feet but durability is lacking. They're comfortable but wear out faster than I'd like for the cost."
+  },
+  {
+    "id": 110,
+    "text": "Laptop stand is sturdy and adjustable. Great for improving posture while working. Good value for money."
+  },
+  {
+    "id": 111,
+    "text": "Laptop stand helps with ergonomics and desk organization. Solid build quality and easy to adjust. Very satisfied with this purchase."
+  },
+  {
+    "id": 112,
+    "text": "Bluetooth speaker has great sound but the connection drops sometimes. When it works, the audio quality is impressive."
+  },
+  {
+    "id": 113,
+    "text": "Bluetooth speaker sounds amazing when connected, but I experience occasional dropouts. Audio quality is top-notch when it works properly."
+  },
+  {
+    "id": 114,
+    "text": "Yoga mat is perfect! Non-slip surface and comfortable thickness. Perfect for my daily practice."
+  },
+  {
+    "id": 115,
+    "text": "Yoga mat has excellent grip and the right amount of cushioning. Ideal for daily yoga sessions, very happy with this purchase."
+  },
+  {
+    "id": 116,
+    "text": "Desk lamp is too bright even on the lowest setting. The design is nice but functionality could be better."
+  },
+  {
+    "id": 117,
+    "text": "Desk lamp looks good but brightness control needs improvement. Even the dimmest setting is too bright for my workspace."
+  },
+  {
+    "id": 118,
+    "text": "USB-C cable works well and charges fast. No complaints, does what it's supposed to do."
+  },
+  {
+    "id": 119,
+    "text": "USB-C cable charges quickly and reliably. Simple product that works as expected, no issues so far."
+  },
+  {
+    "id": 120,
+    "text": "Water bottle keeps drinks cold for hours. Love the design and it's leak-proof. Great for workouts!"
+  },
+  {
+    "id": 121,
+    "text": "Water bottle maintains temperature well and never leaks. Stylish design and perfect for active lifestyle. Highly recommend!"
   }
 ]
-

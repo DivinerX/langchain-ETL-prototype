@@ -254,7 +254,7 @@ class LLMEnricher:
             logger.error(f"Error generating summary: {e}", exc_info=False)
             return ""
     
-    def enrich_record(self, text: str, delay_between_calls: float = 1.0) -> Dict[str, str]:
+    def enrich_record(self, text: str, delay_between_calls: float = 0.5) -> Dict[str, str]:
         """
         Enrich a single record with all LLM-generated fields.
         
@@ -300,7 +300,7 @@ class LLMEnricher:
 
 
 def enrich_dataframe(df, text_column: str = 'review_text', batch_size: int = 5, 
-                     delay_between_calls: float = 0.5, delay_between_records: float = 1.0,
+                     delay_between_calls: float = 0.2, delay_between_records: float = 0.3,
                      max_consecutive_errors: int = 5):
     """
     Enrich a DataFrame with LLM-generated fields.
