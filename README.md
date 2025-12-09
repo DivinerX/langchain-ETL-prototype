@@ -229,3 +229,121 @@ This project demonstrates:
 - Lightweight and usable frontend
 
 It reflects production-minded AI engineering principles in a concise, extensible prototype.
+
+---
+
+## Deployment to Fly.io
+
+This project includes configuration files for deploying to Fly.io's free tier.
+
+### Prerequisites
+
+1. **Install Fly CLI**
+   - **Windows (PowerShell):**
+     ```powershell
+     powershell -Command "iwr https://fly.io/install.ps1 -useb | iex"
+     ```
+   - **macOS/Linux:**
+     ```bash
+     curl -L https://fly.io/install.sh | sh
+     ```
+
+2. **Login to Fly.io**
+   ```bash
+   fly auth login
+   ```
+   This will open a browser window for authentication. Complete the login process.
+
+### Deployment Steps
+
+1. **Create and Launch the Application**
+   ```bash
+   fly launch
+   ```
+   
+   During the launch process, you'll be prompted with several questions:
+   
+   - **App name**: Press Enter to use `product-review` (or type a different name)
+   - **Region**: Press Enter to use `dfw` (or select a different region)
+   - **Postgres database**: Type `n` and press Enter (we're using SQLite)
+   - **Redis**: Type `n` and press Enter (not needed for this project)
+   - **Deploy now?**: Type `n` and press Enter (we'll set secrets first)
+   
+   This command creates the app on Fly.io and prepares it for deployment.
+
+2. **Set Environment Variables (Secrets)**
+   
+   Set your API keys as secrets (these are encrypted and stored securely):
+   ```bash
+   fly secrets set OPENAI_API_KEY=your_openai_key
+   fly secrets set PINECONE_API_KEY=your_pinecone_key
+   fly secrets set PINECONE_INDEX_NAME=your_index_name
+   ```
+   
+   Replace `your_openai_key`, `your_pinecone_key`, and `your_index_name` with your actual values.
+   
+   **Note**: You can set all secrets at once:
+   ```bash
+   fly secrets set OPENAI_API_KEY=your_openai_key PINECONE_API_KEY=your_pinecone_key PINECONE_INDEX_NAME=your_index_name
+   ```
+
+3. **Deploy the Application**
+   ```bash
+   fly deploy
+   ```
+   
+   This command will:
+   - Build the Docker image using the `Dockerfile`
+   - Push the image to Fly.io
+   - Deploy the application to the cloud
+   - Start the application
+   
+   The deployment process may take a few minutes. You'll see build logs and deployment progress.
+
+4. **Verify Deployment**
+   ```bash
+   fly status
+   fly logs
+   ```
+
+5. **Open Your Application**
+   ```bash
+   fly open
+   ```
+   Or visit: `https://product-review.fly.dev`
+
+### Post-Deployment
+
+- **Run the Data Pipeline**: After deployment, you may need to run the data ingestion and enrichment pipeline. You can do this by SSH'ing into the machine:
+  ```bash
+  fly ssh console
+  python src/run_pipeline.py
+  ```
+
+- **View Logs**: Monitor your application logs:
+  ```bash
+  fly logs
+  ```
+
+- **Scale Resources** (if needed): The default configuration uses 256MB RAM (free tier). To scale:
+  ```bash
+  fly scale memory 512
+  ```
+
+### Important Notes
+
+- **SQLite Persistence**: The SQLite database is ephemeral by default. For persistent storage, create a volume:
+  ```bash
+  fly volumes create data --size 1
+  ```
+  Then update the database path in your code to use the volume mount.
+
+- **Free Tier Limits**: 
+  - 256MB RAM
+  - Shared CPU
+  - 3GB storage
+  - Auto-stops when idle (auto-starts on request)
+
+- **Health Checks**: The application includes a `/health` endpoint that Fly.io monitors automatically.
+
+- **API Documentation**: Once deployed, access interactive API docs at `https://your-app.fly.dev/docs`
